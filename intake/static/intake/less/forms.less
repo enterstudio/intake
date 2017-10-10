@@ -100,13 +100,17 @@ button {
 			margin-right: 0.5em;
 		}
 	}
-button[type="submit"] { .btn-primary; .btn-lg; }
+button[type="submit"], .action-back { .btn-primary; .btn-lg; }
 button[type="submit"].action-forward { .btn-success; .btn-lg; }
-button[type="submit"].action-back { .btn-default; .btn-lg; }
+button.action-back, a.action-back { 
+	.btn-default;
+	.btn-lg; 
+	margin: 0.5em 0.25em;
+}
 
-
-.warnings, .errors {
-	margin: 0 -1em;
+.field.warnings, .field.errors {
+	margin-left: -1em;
+	margin-right: -1em;
 	padding: .5em 1em;
 	position: relative;
 }
@@ -127,10 +131,16 @@ button[type="submit"].action-back { .btn-default; .btn-lg; }
 .errorlist {
 	color: @brand-danger-text;
 }
-.errors {
+.field.errors {
 	border-top: .25em solid @brand-danger;
 	border-bottom: .25em solid @brand-danger;
 	background-color: @brand-danger-background;
+}
+
+.subfield.errors {
+	input {
+		border: .1em solid @brand-danger;
+	}
 }
 
 .counties label > * { vertical-align: text-top; display: inline-block; }

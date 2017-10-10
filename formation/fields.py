@@ -1,8 +1,10 @@
 from django.utils import timezone
 from django.utils.safestring import mark_safe
 from django.utils.translation import ugettext_lazy as _
-from django.core.validators import EmailValidator, URLValidator
-from project.jinja2 import oxford_comma
+from django.core.validators import (
+    EmailValidator, URLValidator, RegexValidator, MinValueValidator,
+    MaxValueValidator)
+from formation.validators import mailgun_email_validator
 from intake.models import County
 from formation.field_types import (
     CharField, MultilineCharField, IntegerField, WholeDollarField, ChoiceField,
@@ -12,9 +14,10 @@ from formation.field_types import (
 )
 from intake.constants import (
     CONTACT_PREFERENCE_CHOICES, REASON_FOR_APPLYING_CHOICES,
-    GENDER_PRONOUN_CHOICES, DECLARATION_LETTER_REVIEW_CHOICES
+    GENDER_PRONOUN_CHOICES, DECLARATION_LETTER_REVIEW_CHOICES,
+    APPLICATION_REVIEW_CHOICES
 )
-from project.jinja2 import namify
+from project.jinja2 import namify, oxford_comma
 
 ###
 # Meta fields about the application
@@ -54,13 +57,16 @@ class Counties(MultipleChoiceField):
 
     def __init__(self, *args, **kwargs):
         # prevents the choices query from being called during import
-        self.choices = County.objects.get_county_choices()
+        self.valid_choices = County.objects.get_county_choices()
+        self.possible_choices = \
+            County.objects.get_all_counties_as_choice_list()
+        self.choices = self.valid_choices
         super().__init__(*args, **kwargs)
 
     def get_ordered_selected_counties(self):
         selected_counties = self.get_current_value()
         return [
-            county for county_slug, county in self.choices
+            county for county_slug, county in self.possible_choices
             if county_slug in selected_counties]
 
     def get_display_for_county(self, county, unlisted_counties=None):
@@ -185,9 +191,14 @@ class DeclarationLetterReviewActions(ChoiceField):
     choices = DECLARATION_LETTER_REVIEW_CHOICES
 
 
+class ApplicationReviewActions(ChoiceField):
+    context_key = 'submit_action'
+    choices = APPLICATION_REVIEW_CHOICES
+
 ###
 # Identification Questions
 ###
+
 
 class NameField(CharField):
 
@@ -215,19 +226,48 @@ class Aliases(NameField):
     label = _('Any other names that might be used on your record?')
 
 
-class Month(CharField):
+number_validation_template = "Please enter a {field} between {min} and {max}"
+month_validation_message = number_validation_template.format(
+    field='month', min=1, max=12)
+day_validation_message = number_validation_template.format(
+    field='day', min=1, max=31)
+year_validation_message = number_validation_template.format(
+    field='year', min=1900, max=timezone.now().year)
+
+
+class DisplayRawIfFalsyMixin:
+    def get_display_value(self):
+        return self.get_current_value() or self.raw_input_value
+
+
+class Month(DisplayRawIfFalsyMixin, IntegerField):
     context_key = "month"
     label = _("Month")
+    validators = [
+        MinValueValidator(1, message=month_validation_message),
+        MaxValueValidator(12, message=month_validation_message)
+    ]
+
+    def get_display_value(self):
+        return self.get_current_value() or " "
 
 
-class Day(CharField):
+class Day(DisplayRawIfFalsyMixin, IntegerField):
     context_key = "day"
     label = _("Day")
+    validators = [
+        MinValueValidator(1, message=day_validation_message),
+        MaxValueValidator(31, message=day_validation_message)
+    ]
 
 
-class Year(CharField):
+class Year(DisplayRawIfFalsyMixin, IntegerField):
     context_key = "year"
     label = _("Year")
+    validators = [
+        MinValueValidator(1900, message=year_validation_message),
+        MaxValueValidator(timezone.now().year, message=year_validation_message)
+    ]
 
 
 class DateOfBirthField(MultiValueField):
@@ -246,7 +286,11 @@ class DateOfBirthField(MultiValueField):
     display_label = "Date of birth"
 
     def get_display_value(self):
-        return "{month}/{day}/{year}".format(**self.get_current_value())
+        return "{month}/{day}/{year}".format(
+            month=self.month.get_display_value(),
+            day=self.day.get_display_value(),
+            year=self.year.get_display_value()
+        )
 
 
 class SocialSecurityNumberField(CharField):
@@ -345,6 +389,7 @@ class EmailField(CharField):
     help_text = _('For example "yourname@example.com"')
     validators = [
         EmailValidator(_("Please enter a valid email")),
+        mailgun_email_validator
     ]
     display_template_name = "formation/email_display.jinja"
 
